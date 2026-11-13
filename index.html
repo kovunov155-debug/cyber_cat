@@ -6,34 +6,38 @@
 <title>Cyber Cat Flyer</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { 
-  background: #000; 
-  overflow: hidden; 
+html, body {
+  width: 100%;
+  height: 100%;
+  background: #060814;
+  overflow: hidden;
   touch-action: none;
-  font-family: 'Arial', sans-serif;
+  user-select: none;
+  font-family: Arial, sans-serif;
   color: #fff;
 }
 #gameCanvas {
   display: block;
   width: 100vw;
   height: 100vh;
-  background: #0a001a;
+  background: #060814;
 }
 #ui {
   position: absolute;
-  top: 10px;
-  left: 10px;
+  top: 12px;
+  left: 14px;
   font-size: 18px;
-  text-shadow: 0 0 5px #ff00ff;
+  line-height: 1.45;
+  text-shadow: 0 0 6px rgba(0, 255, 255, 0.45);
   z-index: 10;
   pointer-events: none;
 }
 #lives { color: #ff55ff; }
-#shield { color: #00ffff; display: none; }
+#shield { color: #00ffff; display: none; font-weight: bold; }
 #startScreen, #gameOverScreen, #pauseScreen {
   position: absolute;
-  top: 0; left: 0; width: 100%; height: 100%;
-  background: rgba(0,0,20,0.9);
+  inset: 0;
+  background: rgba(6, 8, 20, 0.88);
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -42,28 +46,34 @@ body {
   text-align: center;
   padding: 20px;
 }
-h1 { font-size: 36px; color: #ff00ff; text-shadow: 0 0 10px #00ffff; margin-bottom: 15px; }
-p { margin: 10px 0; font-size: 16px; line-height: 1.4; }
+h1 {
+  font-size: 36px;
+  color: #22d3ee;
+  text-shadow: 0 0 12px rgba(232, 121, 249, 0.6);
+  margin-bottom: 14px;
+}
+p { margin: 10px 0; font-size: 16px; line-height: 1.5; color: #cbd5e1; }
 button {
-  padding: 15px 40px;
-  font-size: 22px;
-  background: linear-gradient(45deg, #ff00ff, #00ffff);
+  padding: 14px 36px;
+  font-size: 20px;
+  background: linear-gradient(45deg, #e879f9, #22d3ee);
   border: none;
   border-radius: 10px;
-  color: #000;
+  color: #060814;
   font-weight: bold;
   cursor: pointer;
   margin: 10px;
 }
-button:active { transform: scale(0.95); }
-.score { font-size: 26px; margin: 8px; }
+button:active { transform: scale(0.96); }
+.score { font-size: 24px; margin: 6px; }
 #pauseBtn {
   position: absolute;
-  top: 10px;
-  right: 10px;
+  top: 12px;
+  right: 12px;
   z-index: 15;
-  padding: 8px 16px;
+  padding: 10px 18px;
   font-size: 16px;
+  margin: 0;
   pointer-events: auto;
 }
 </style>
@@ -77,17 +87,20 @@ button:active { transform: scale(0.95); }
   <div id="shield">ЩИТ</div>
 </div>
 <button id="pauseBtn" style="display:none;">Пауза</button>
+
 <div id="startScreen">
   <h1>Cyber Cat Flyer</h1>
-  <p>Тапай чтобы лететь вверх!<br>Собирай звёзды (+10).<br>Избегай астероидов.<br>3 жизни. Иногда появляется щит.</p>
+  <p>Тапай или жми Пробел, чтобы лететь вверх!<br>Собирай звёзды (+10).<br>Избегай астероидов.<br>3 жизни. Иногда появляется щит.</p>
   <button id="startBtn">Старт</button>
 </div>
+
 <div id="gameOverScreen" style="display:none;">
   <h1>Game Over</h1>
   <div class="score" id="finalScore">Счёт: 0</div>
   <div class="score" id="finalHigh">Рекорд: 0</div>
   <button id="restartBtn">Играть снова</button>
 </div>
+
 <div id="pauseScreen" style="display:none;">
   <h1>Пауза</h1>
   <button id="resumeBtn">Продолжить</button>
@@ -107,128 +120,186 @@ const pauseBtn = document.getElementById('pauseBtn');
 const finalScoreEl = document.getElementById('finalScore');
 const finalHighEl = document.getElementById('finalHigh');
 
-let W, H;
-function resize() {
-  W = canvas.width = window.innerWidth;
-  H = canvas.height = window.innerHeight;
-}
-window.addEventListener('resize', resize);
-resize();
+let W = window.innerWidth;
+let H = window.innerHeight;
 
-// Audio (Web Audio API - no files needed)
-let audioCtx;
-function initAudio() {
-  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = Math.floor(W * dpr);
+  canvas.height = Math.floor(H * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  cat.x = Math.max(40, Math.min(200, W * 0.18));
+  if (cat.y + cat.height > H) cat.y = Math.max(0, H - cat.height - 10);
 }
+
+// Audio (Web Audio API)
+let audioCtx = null;
+function initAudio() {
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtx) return;
+  if (!audioCtx) audioCtx = new AudioCtx();
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume().catch(() => {});
+  }
+}
+
 function playSound(type) {
   if (!audioCtx) return;
+  if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+  const now = audioCtx.currentTime;
   const osc = audioCtx.createOscillator();
   const gain = audioCtx.createGain();
   osc.connect(gain);
   gain.connect(audioCtx.destination);
+
   if (type === 'jump') {
-    osc.frequency.setValueAtTime(400, audioCtx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(800, audioCtx.currentTime + 0.1);
-    gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
-    osc.start(); osc.stop(audioCtx.currentTime + 0.15);
+    osc.frequency.setValueAtTime(400, now);
+    osc.frequency.exponentialRampToValueAtTime(800, now + 0.1);
+    gain.gain.setValueAtTime(0.22, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+    osc.start(now);
+    osc.stop(now + 0.16);
   } else if (type === 'star') {
-    osc.frequency.setValueAtTime(800, audioCtx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(1200, audioCtx.currentTime + 0.1);
-    gain.gain.setValueAtTime(0.25, audioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
-    osc.start(); osc.stop(audioCtx.currentTime + 0.2);
+    osc.frequency.setValueAtTime(800, now);
+    osc.frequency.exponentialRampToValueAtTime(1250, now + 0.1);
+    gain.gain.setValueAtTime(0.2, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+    osc.start(now);
+    osc.stop(now + 0.21);
   } else if (type === 'hit') {
     osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(200, audioCtx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.3);
-    gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
-    osc.start(); osc.stop(audioCtx.currentTime + 0.3);
+    osc.frequency.setValueAtTime(200, now);
+    osc.frequency.exponentialRampToValueAtTime(50, now + 0.28);
+    gain.gain.setValueAtTime(0.28, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+    osc.start(now);
+    osc.stop(now + 0.31);
   } else if (type === 'shield') {
-    osc.frequency.setValueAtTime(600, audioCtx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(1000, audioCtx.currentTime + 0.15);
-    gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.25);
-    osc.start(); osc.stop(audioCtx.currentTime + 0.25);
+    osc.frequency.setValueAtTime(600, now);
+    osc.frequency.exponentialRampToValueAtTime(1050, now + 0.15);
+    gain.gain.setValueAtTime(0.2, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+    osc.start(now);
+    osc.stop(now + 0.26);
   }
 }
 
-// Images
-const catImg = new Image(); catImg.src = 'assets/cat.jpg';
-const starImg = new Image(); starImg.src = 'assets/star.jpg';
-const astImg = new Image(); astImg.src = 'assets/asteroid.jpg';
-const bgImg = new Image(); bgImg.src = 'assets/bg.jpg';
+// Безопасная загрузка изображений (не падает, если assets/*.jpg отсутствуют)
+function loadImg(src) {
+  const img = new Image();
+  img.failed = false;
+  img.onerror = () => { img.failed = true; };
+  img.src = src;
+  return img;
+}
+function isImgReady(img) {
+  return img && !img.failed && img.complete && img.naturalWidth > 0;
+}
 
-let imagesLoaded = 0;
-[catImg, starImg, astImg, bgImg].forEach(img => {
-  img.onload = () => { imagesLoaded++; if (imagesLoaded === 4) init(); };
-});
+const catImg = loadImg('assets/cat.jpg');
+const starImg = loadImg('assets/star.jpg');
+const astImg = loadImg('assets/asteroid.jpg');
+const bgImg = loadImg('assets/bg.jpg');
 
 // Game state
 let gameRunning = false;
 let paused = false;
 let score = 0;
-let highScore = parseInt(localStorage.getItem('cyberCatHigh') || '0');
-let lives = 3;
-let hasShield = false;
-let shieldTimer = 0;
+let scoreAccum = 0;
+let highScore = 0;
+try {
+  highScore = parseInt(localStorage.getItem('cyberCatHigh') || '0', 10) || 0;
+} catch (e) {
+  highScore = 0;
+}
 highScoreEl.textContent = 'Рекорд: ' + highScore;
 
-const cat = { x: 0, y: 0, width: 80, height: 80, vy: 0, gravity: 0.45, jump: -10 };
+let lives = 3;
+let hasShield = false;
+let shieldTimer = 0; // секунды
+let invincibleTimer = 0; // секунды неуязвимости после удара
+
+const cat = { x: 100, y: 200, width: 68, height: 68, vy: 0, gravity: 0.42, jump: -8.8 };
 let stars = [];
 let asteroids = [];
 let particles = [];
 let shields = [];
-let frame = 0;
+let bgStars = [];
+let starSpawnTimer = 0.8;
+let astSpawnTimer = 1.2;
+let shieldSpawnTimer = 9;
 let bgX = 0;
 let difficulty = 1;
+let animTime = 0;
+
+function initBgStars() {
+  bgStars = [];
+  for (let i = 0; i < 65; i++) {
+    bgStars.push({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      r: 0.8 + Math.random() * 1.6,
+      speed: 0.5 + Math.random() * 1.5
+    });
+  }
+}
+
+window.addEventListener('resize', resize);
+resize();
+initBgStars();
 
 function init() {
-  cat.x = W * 0.2;
-  cat.y = H / 2;
+  cat.x = Math.max(40, Math.min(200, W * 0.18));
+  cat.y = H / 2 - cat.height / 2;
   cat.vy = 0;
   stars = [];
   asteroids = [];
   particles = [];
   shields = [];
   score = 0;
-  frame = 0;
+  scoreAccum = 0;
   lives = 3;
   hasShield = false;
   shieldTimer = 0;
+  invincibleTimer = 0;
   difficulty = 1;
+  starSpawnTimer = 0.7;
+  astSpawnTimer = 1.1;
+  shieldSpawnTimer = 8.5;
   scoreEl.textContent = 'Счёт: 0';
   updateLivesUI();
   shieldEl.style.display = 'none';
 }
 
 function updateLivesUI() {
-  livesEl.textContent = '❤'.repeat(lives);
+  livesEl.textContent = lives > 0 ? '❤'.repeat(lives) : '0';
 }
 
 function spawnStar() {
   stars.push({
     x: W + 40,
-    y: Math.random() * (H - 80) + 40,
-    size: 38,
-    speed: 3.2 + difficulty * 0.4
+    y: 44 + Math.random() * Math.max(40, H - 120),
+    size: 36,
+    speed: 3.3 + difficulty * 0.4
   });
 }
 
 function spawnAsteroid() {
+  const size = 52 + Math.random() * 34;
   asteroids.push({
-    x: W + 40,
-    y: Math.random() * (H - 100) + 30,
-    size: 55 + Math.random() * 35,
-    speed: 4 + difficulty * 0.6
+    x: W + 50,
+    y: 30 + Math.random() * Math.max(40, H - size - 60),
+    size,
+    speed: 4.0 + difficulty * 0.58
   });
 }
 
 function spawnShield() {
   shields.push({
     x: W + 40,
-    y: Math.random() * (H - 80) + 40,
+    y: 50 + Math.random() * Math.max(40, H - 130),
     size: 40,
     speed: 3.5
   });
@@ -240,170 +311,308 @@ function spawnParticles(x, y, color, count = 12) {
       x, y,
       vx: (Math.random() - 0.5) * 6,
       vy: (Math.random() - 0.5) * 6,
-      life: 30 + Math.random() * 20,
+      life: 0.6 + Math.random() * 0.3,
+      maxLife: 0.9,
       color
     });
   }
 }
 
-function update() {
-  if (!gameRunning || paused) return;
-  frame++;
-  difficulty = 1 + Math.floor(score / 200);
-
-  cat.vy += cat.gravity;
-  cat.y += cat.vy;
-  if (cat.y < 0) cat.y = 0;
-  if (cat.y + cat.height > H) {
-    takeDamage();
-    return;
-  }
-
-  bgX -= 1.2 + difficulty * 0.3;
-  if (bgX <= -W) bgX = 0;
-
-  if (frame % Math.max(40, 70 - difficulty * 5) === 0) spawnStar();
-  if (frame % Math.max(50, 100 - difficulty * 8) === 0) spawnAsteroid();
-  if (frame % 400 === 0 && !hasShield) spawnShield();
-
-  // Stars
-  for (let i = stars.length - 1; i >= 0; i--) {
-    stars[i].x -= stars[i].speed;
-    if (stars[i].x < -50) stars.splice(i, 1);
-    else if (rectsCollide(cat, stars[i])) {
-      score += 10;
-      spawnParticles(stars[i].x + 20, stars[i].y + 20, '#ffff00', 8);
-      stars.splice(i, 1);
-      scoreEl.textContent = 'Счёт: ' + score;
-      playSound('star');
-    }
-  }
-
-  // Asteroids
-  for (let i = asteroids.length - 1; i >= 0; i--) {
-    asteroids[i].x -= asteroids[i].speed;
-    if (asteroids[i].x < -100) asteroids.splice(i, 1);
-    else if (rectsCollide(cat, asteroids[i])) {
-      if (hasShield) {
-        hasShield = false;
-        shieldEl.style.display = 'none';
-        spawnParticles(asteroids[i].x + 30, asteroids[i].y + 30, '#00ffff', 15);
-        asteroids.splice(i, 1);
-        playSound('shield');
-      } else {
-        takeDamage();
-        return;
-      }
-    }
-  }
-
-  // Shields
-  for (let i = shields.length - 1; i >= 0; i--) {
-    shields[i].x -= shields[i].speed;
-    if (shields[i].x < -50) shields.splice(i, 1);
-    else if (rectsCollide(cat, shields[i])) {
-      hasShield = true;
-      shieldTimer = 600;
-      shieldEl.style.display = 'block';
-      shields.splice(i, 1);
-      playSound('shield');
-    }
-  }
-
-  if (hasShield) {
-    shieldTimer--;
-    if (shieldTimer <= 0) {
-      hasShield = false;
-      shieldEl.style.display = 'none';
-    }
-  }
-
-  // Particles
-  for (let i = particles.length - 1; i >= 0; i--) {
-    const p = particles[i];
-    p.x += p.vx;
-    p.y += p.vy;
-    p.life--;
-    if (p.life <= 0) particles.splice(i, 1);
-  }
-
-  if (frame % 8 === 0) {
-    score += 1;
-    scoreEl.textContent = 'Счёт: ' + score;
-  }
+function circlesCollide(ax, ay, ar, bx, by, br) {
+  const dx = ax - bx;
+  const dy = ay - by;
+  const sum = ar + br;
+  return dx * dx + dy * dy < sum * sum;
 }
 
 function takeDamage() {
   lives--;
   updateLivesUI();
   playSound('hit');
-  spawnParticles(cat.x + 40, cat.y + 40, '#ff00ff', 20);
+  spawnParticles(cat.x + cat.width / 2, cat.y + cat.height / 2, '#ff00ff', 20);
   if (lives <= 0) {
     gameOver();
   } else {
-    cat.y = H / 2;
-    cat.vy = 0;
+    invincibleTimer = 1.8;
+    cat.y = H / 2 - cat.height / 2;
+    cat.vy = -2;
+    asteroids = asteroids.filter(a => Math.abs(a.x - cat.x) > cat.width * 2.5);
   }
 }
 
-function rectsCollide(a, b) {
-  const bSize = b.size || 40;
-  return a.x < b.x + bSize &&
-         a.x + a.width > b.x &&
-         a.y < b.y + bSize &&
-         a.y + a.height > b.y;
+function update(dt) {
+  const step = dt * 60; // Нормализация под 60 FPS (одинаково на 60/120/144 Гц)
+  animTime += dt;
+
+  bgX -= (gameRunning && !paused ? 1.2 + difficulty * 0.3 : 0.4) * step;
+  if (bgX <= -W) bgX += W;
+
+  for (const s of bgStars) {
+    s.x -= s.speed * step;
+    if (s.x < -4) {
+      s.x = W + 4;
+      s.y = Math.random() * H;
+    }
+  }
+
+  if (!gameRunning || paused) return;
+
+  difficulty = 1 + Math.floor(score / 200);
+
+  cat.vy += cat.gravity * step;
+  cat.vy = Math.min(12, cat.vy);
+  cat.y += cat.vy * step;
+
+  if (cat.y < 0) {
+    cat.y = 0;
+    if (cat.vy < 0) cat.vy = 0;
+  }
+  if (cat.y + cat.height > H) {
+    if (invincibleTimer > 0) {
+      cat.y = H - cat.height - 10;
+      cat.vy = -5;
+    } else {
+      takeDamage();
+      if (!gameRunning) return;
+    }
+  }
+
+  if (invincibleTimer > 0) invincibleTimer = Math.max(0, invincibleTimer - dt);
+
+  if (hasShield) {
+    shieldTimer -= dt;
+    shieldEl.textContent = 'ЩИТ · ' + Math.ceil(shieldTimer) + 'с';
+    if (shieldTimer <= 0) {
+      hasShield = false;
+      shieldEl.style.display = 'none';
+    }
+  }
+
+  starSpawnTimer -= dt;
+  if (starSpawnTimer <= 0) {
+    spawnStar();
+    starSpawnTimer = Math.max(0.65, 1.2 - difficulty * 0.06);
+  }
+
+  astSpawnTimer -= dt;
+  if (astSpawnTimer <= 0) {
+    spawnAsteroid();
+    astSpawnTimer = Math.max(0.7, 1.5 - difficulty * 0.09);
+  }
+
+  if (!hasShield) {
+    shieldSpawnTimer -= dt;
+    if (shieldSpawnTimer <= 0) {
+      spawnShield();
+      shieldSpawnTimer = 10 + Math.random() * 5;
+    }
+  }
+
+  const catCx = cat.x + cat.width / 2;
+  const catCy = cat.y + cat.height / 2;
+  const catR = cat.width * 0.32;
+
+  for (let i = stars.length - 1; i >= 0; i--) {
+    const s = stars[i];
+    s.x -= s.speed * step;
+    if (s.x < -50) {
+      stars.splice(i, 1);
+    } else if (circlesCollide(catCx, catCy, catR + 6, s.x + s.size / 2, s.y + s.size / 2, s.size * 0.48)) {
+      score += 10;
+      spawnParticles(s.x + s.size / 2, s.y + s.size / 2, '#fbbf24', 10);
+      stars.splice(i, 1);
+      scoreEl.textContent = 'Счёт: ' + score;
+      playSound('star');
+    }
+  }
+
+  for (let i = shields.length - 1; i >= 0; i--) {
+    const sh = shields[i];
+    sh.x -= sh.speed * step;
+    if (sh.x < -50) {
+      shields.splice(i, 1);
+    } else if (circlesCollide(catCx, catCy, catR + 6, sh.x + sh.size / 2, sh.y + sh.size / 2, sh.size * 0.5)) {
+      hasShield = true;
+      shieldTimer = 10;
+      shieldEl.style.display = 'block';
+      shieldEl.textContent = 'ЩИТ · 10с';
+      shields.splice(i, 1);
+      playSound('shield');
+    }
+  }
+
+  for (let i = asteroids.length - 1; i >= 0; i--) {
+    const a = asteroids[i];
+    a.x -= a.speed * step;
+    if (a.x < -100) {
+      asteroids.splice(i, 1);
+    } else if (circlesCollide(catCx, catCy, catR, a.x + a.size / 2, a.y + a.size / 2, a.size * 0.4)) {
+      if (hasShield) {
+        hasShield = false;
+        shieldEl.style.display = 'none';
+        spawnParticles(a.x + a.size / 2, a.y + a.size / 2, '#00ffff', 16);
+        asteroids.splice(i, 1);
+        playSound('shield');
+      } else if (invincibleTimer <= 0) {
+        asteroids.splice(i, 1);
+        takeDamage();
+        if (!gameRunning) return;
+      }
+    }
+  }
+
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx * step;
+    p.y += p.vy * step;
+    p.life -= dt;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+
+  scoreAccum += dt * 7.5;
+  if (scoreAccum >= 1) {
+    const add = Math.floor(scoreAccum);
+    scoreAccum -= add;
+    score += add;
+    scoreEl.textContent = 'Счёт: ' + score;
+  }
+}
+
+function drawVectorStar(x, y, size) {
+  const cx = x + size / 2;
+  const cy = y + size / 2;
+  const outer = size / 2;
+  const inner = outer * 0.45;
+  ctx.fillStyle = '#fbbf24';
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const r = i % 2 === 0 ? outer : inner;
+    const ang = (i * Math.PI) / 5 - Math.PI / 2;
+    const px = cx + Math.cos(ang) * r;
+    const py = cy + Math.sin(ang) * r;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawVectorCat() {
+  if (invincibleTimer > 0 && Math.floor(animTime * 14) % 2 === 0) return;
+  const cx = cat.x + cat.width / 2;
+  const cy = cat.y + cat.height / 2;
+  const r = cat.width * 0.36;
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(Math.max(-0.35, Math.min(0.4, cat.vy * 0.045)));
+
+  // Уши
+  ctx.fillStyle = '#1e293b';
+  ctx.strokeStyle = '#22d3ee';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.65, -r * 0.3);
+  ctx.lineTo(-r * 0.8, -r * 1.15);
+  ctx.lineTo(-r * 0.1, -r * 0.75);
+  ctx.closePath();
+  ctx.fill(); ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(r * 0.1, -r * 0.75);
+  ctx.lineTo(r * 0.8, -r * 1.15);
+  ctx.lineTo(r * 0.65, -r * 0.3);
+  ctx.closePath();
+  ctx.fill(); ctx.stroke();
+
+  // Голова/корпус
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.fill(); ctx.stroke();
+
+  // Кибер-визор
+  ctx.fillStyle = '#22d3ee';
+  ctx.fillRect(-r * 0.15, -r * 0.28, r * 0.85, r * 0.36);
+
+  ctx.restore();
 }
 
 function draw() {
-  if (bgImg.complete) {
+  if (isImgReady(bgImg)) {
     ctx.drawImage(bgImg, bgX, 0, W, H);
     ctx.drawImage(bgImg, bgX + W, 0, W, H);
   } else {
-    ctx.fillStyle = '#0a001a';
+    ctx.fillStyle = '#060814';
     ctx.fillRect(0, 0, W, H);
   }
 
-  particles.forEach(p => {
-    ctx.globalAlpha = p.life / 40;
+  ctx.fillStyle = 'rgba(255,255,255,0.75)';
+  for (const s of bgStars) {
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  for (const p of particles) {
+    ctx.globalAlpha = Math.max(0, p.life / p.maxLife);
     ctx.fillStyle = p.color;
     ctx.beginPath();
     ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
     ctx.fill();
-    ctx.globalAlpha = 1;
-  });
+  }
+  ctx.globalAlpha = 1;
 
-  stars.forEach(s => {
-    if (starImg.complete) ctx.drawImage(starImg, s.x, s.y, s.size, s.size);
-  });
+  for (const s of stars) {
+    if (isImgReady(starImg)) ctx.drawImage(starImg, s.x, s.y, s.size, s.size);
+    else drawVectorStar(s.x, s.y, s.size);
+  }
 
-  shields.forEach(s => {
-    ctx.fillStyle = '#00ffff';
+  for (const sh of shields) {
+    ctx.fillStyle = 'rgba(34, 211, 238, 0.35)';
+    ctx.strokeStyle = '#22d3ee';
+    ctx.lineWidth = 2.5;
     ctx.beginPath();
-    ctx.arc(s.x + s.size/2, s.y + s.size/2, s.size/2, 0, Math.PI * 2);
+    ctx.arc(sh.x + sh.size / 2, sh.y + sh.size / 2, sh.size / 2, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = '#fff';
     ctx.stroke();
-  });
+  }
 
-  asteroids.forEach(a => {
-    if (astImg.complete) ctx.drawImage(astImg, a.x, a.y, a.size, a.size);
-  });
+  for (const a of asteroids) {
+    if (isImgReady(astImg)) {
+      ctx.drawImage(astImg, a.x, a.y, a.size, a.size);
+    } else {
+      ctx.fillStyle = '#475569';
+      ctx.strokeStyle = '#94a3b8';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(a.x + a.size / 2, a.y + a.size / 2, a.size / 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
 
   if (hasShield) {
-    ctx.shadowBlur = 20;
-    ctx.shadowColor = '#00ffff';
+    ctx.strokeStyle = '#22d3ee';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(cat.x + cat.width / 2, cat.y + cat.height / 2, cat.width * 0.6, 0, Math.PI * 2);
+    ctx.stroke();
   }
-  if (catImg.complete) {
-    ctx.drawImage(catImg, cat.x, cat.y, cat.width, cat.height);
+
+  if (isImgReady(catImg)) {
+    if (!(invincibleTimer > 0 && Math.floor(animTime * 14) % 2 === 0)) {
+      ctx.drawImage(catImg, cat.x, cat.y, cat.width, cat.height);
+    }
   } else {
-    ctx.fillStyle = '#ff00ff';
-    ctx.fillRect(cat.x, cat.y, cat.width, cat.height);
+    drawVectorCat();
   }
-  ctx.shadowBlur = 0;
 }
 
-function gameLoop() {
-  update();
+let lastTime = performance.now();
+function gameLoop(now) {
+  const dt = Math.min(0.05, Math.max(0.001, (now - lastTime) / 1000));
+  lastTime = now;
+  update(dt);
   draw();
   requestAnimationFrame(gameLoop);
 }
@@ -424,7 +633,7 @@ function gameOver() {
   paused = false;
   if (score > highScore) {
     highScore = score;
-    localStorage.setItem('cyberCatHigh', highScore);
+    try { localStorage.setItem('cyberCatHigh', String(highScore)); } catch (e) {}
   }
   finalScoreEl.textContent = 'Счёт: ' + score;
   finalHighEl.textContent = 'Рекорд: ' + highScore;
@@ -446,20 +655,26 @@ function togglePause() {
   pauseScreen.style.display = paused ? 'flex' : 'none';
 }
 
-// Controls
-document.getElementById('startBtn').onclick = startGame;
-document.getElementById('restartBtn').onclick = startGame;
-document.getElementById('resumeBtn').onclick = togglePause;
-pauseBtn.onclick = togglePause;
+document.getElementById('startBtn').onclick = function() { this.blur(); startGame(); };
+document.getElementById('restartBtn').onclick = function() { this.blur(); startGame(); };
+document.getElementById('resumeBtn').onclick = function() { this.blur(); togglePause(); };
+pauseBtn.onclick = function() { this.blur(); togglePause(); };
 
-canvas.addEventListener('touchstart', (e) => { e.preventDefault(); jump(); });
-canvas.addEventListener('click', jump);
+canvas.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  jump();
+});
+
 document.addEventListener('keydown', (e) => {
-  if (e.code === 'Space') jump();
+  if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
+    e.preventDefault();
+    if (!e.repeat) jump();
+  }
   if (e.code === 'KeyP' || e.code === 'Escape') togglePause();
 });
 
-gameLoop();
+init();
+requestAnimationFrame(gameLoop);
 </script>
 </body>
 </html>
